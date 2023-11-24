@@ -41,7 +41,8 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
 
                     if closed_frames == 1:
                         start_time = time.time()
-                    elif closed_frames >= int(threshold_seconds / 0.1) and time.time() - start_time >= threshold_seconds:
+                    elif closed_frames >= int(
+                            threshold_seconds / 0.1) and time.time() - start_time >= threshold_seconds:
                         cv2.destroyAllWindows()
                         cap.release()
                         exit(0)
@@ -59,4 +60,3 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
 
 cap.release()
 cv2.destroyAllWindows()
- 
