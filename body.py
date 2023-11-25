@@ -4,15 +4,17 @@ import time
 
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
+mp_hands = mp.solutions.hands
 
 cap = cv2.VideoCapture(0)
 
-closed_frames = 0
-threshold_seconds = 10  # liczba sekund, po których postać musi być w określonym stanie
+with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose, \
+     mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
 
-start_time = None
+    start_time = None
+    closed_hand_duration = 0
+    closed_hand_threshold = 10  # 10 sekundy zamkniętej dłoni
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -20,45 +22,56 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        results = pose.process(rgb_frame)
+        # Śledzenie pozy postaci
+        pose_results = pose.process(rgb_frame)
+        if pose_results.pose_landmarks:
+            mp_drawing.draw_landmarks(frame, pose_results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-        if results.pose_landmarks:
-            # Sprawdzanie warunków postaci
-            nose = results.pose_landmarks.landmark[mp_pose.PoseLandmark.NOSE]
-            left_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
-            right_shoulder = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        # Śledzenie dłoni
+        hand_results = hands.process(rgb_frame)
+        if hand_results.multi_hand_landmarks:
+            for landmarks in hand_results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS)
 
-            nose_to_left_shoulder_distance = cv2.norm(
-                (int(nose.x * frame.shape[1]), int(nose.y * frame.shape[0])),
-                (int(left_shoulder.x * frame.shape[1]), int(left_shoulder.y * frame.shape[0]))
-            )
+                # Sprawdzanie, czy dłoń jest zamknięta
+                is_hand_closed = landmarks.landmark[mp_hands.HandLandmark.WRIST].y > \
+                                 landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP].y
 
-            nose_to_right_shoulder_distance = cv2.norm(
-                (int(nose.x * frame.shape[1]), int(nose.y * frame.shape[0])),
-                (int(right_shoulder.x * frame.shape[1]), int(right_shoulder.y * frame.shape[0]))
-            )
+                if is_hand_closed:
+                    if start_time is None:
+                        start_time = time.time()
+                    else:
+                        closed_hand_duration = time.time() - start_time
+                        if closed_hand_duration >= closed_hand_threshold:
+                            print("Zamknięta dłoń utrzymuje się przez 10 sekund. Zamykanie programu.")
+                            cap.release()
+                            cv2.destroyAllWindows()
+                            exit()  # opcjonalnie, można użyć break, aby zakończyć pętlę
 
-            if nose_to_left_shoulder_distance < 100 or nose_to_right_shoulder_distance < 100:
-                cv2.putText(frame, 'Closed', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                closed_frames += 1
+                else:
+                    start_time = None  # Resetuj czas, gdy dłoń jest otwarta
 
-                if closed_frames == 1:
-                    start_time = time.time()
-                elif closed_frames >= int(threshold_seconds / 0.1) and time.time() - start_time >= threshold_seconds:
-                    cv2.destroyAllWindows()
-                    cap.release()
-                    exit(0)
-            else:
-                cv2.putText(frame, 'Open', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                closed_frames = 0
-                start_time = None
+            # Czytanie gestów
+            for hand_landmarks in hand_results.multi_hand_landmarks:
+                # Analiza gestów
+                fingers_up = [hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].y <
+                              hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_DIP].y,
+                              hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP].y <
+                              hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_DIP].y,
+                              hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP].y <
+                              hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_DIP].y,
+                              hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP].y <
+                              hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_DIP].y]
 
-            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                # Reakcja na zamkniętą dłoń
+                if all(fingers_up):
+                    cv2.putText(frame, "Wszystkie palce uniesione", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                elif not any(fingers_up):
+                    cv2.putText(frame, "Wszystkie palce opuszczone", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        cv2.imshow('Pose Tracking', frame)
+        cv2.imshow('Pose and Hand Tracking', frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-cap.release()
 cv2.destroyAllWindows()

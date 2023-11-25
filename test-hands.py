@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import time
+import speech_recognition as sr
 
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
@@ -8,9 +9,12 @@ mp_hands = mp.solutions.hands
 cap = cv2.VideoCapture(0)
 
 closed_frames = 0
-threshold_seconds = 5  # liczba sekund, po których dłoń musi być zamknięta
+threshold_seconds = 10  # liczba sekund, po których dłoń musi być zamknięta
 
 start_time = None
+
+# Inicjalizacja obiektu do rozpoznawania mowy
+recognizer = sr.Recognizer()
 
 with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
     while cap.isOpened():
@@ -54,6 +58,27 @@ with mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5) a
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
         cv2.imshow('Hand Tracking', frame)
+
+        # Rozpoznawanie mowy
+        with sr.Microphone() as source:
+            print("Say something...")
+            recognizer.adjust_for_ambient_noise(source)
+            audio = recognizer.listen(source, timeout=5)
+
+            try:
+                command = recognizer.recognize_google(audio).lower()
+                print("You said:", command)
+
+                # Dodaj swoje komendy głosowe i odpowiednie akcje
+                if "exit" in command:
+                    cv2.destroyAllWindows()
+                    cap.release()
+                    exit(0)
+
+            except sr.UnknownValueError:
+                pass
+            except sr.RequestError as e:
+                print("Error during speech recognition request; {0}".format(e))
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
