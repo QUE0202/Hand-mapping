@@ -1,6 +1,11 @@
 import cv2
 import mediapipe as mp
 import time
+import platform
+
+if platform.system() == "Darwin":
+    cv2.VideoCapture(0).release()
+
 
 mp_drawing = mp.solutions.drawing_utils
 mp_hands = mp.solutions.hands
